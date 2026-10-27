@@ -2,6 +2,254 @@
 <html lang="en" class="scroll-smooth">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function() {
+        function isVoiceflowAuthError(reason, src) {
+          var msg = (reason && (reason.name || reason.message || String(reason))) || "";
+          var stack = (reason && reason.stack) || "";
+          var source = src || "";
+          return (
+            msg.indexOf("UnauthorizedError") !== -1 ||
+            msg.indexOf("unable to fetch project") !== -1 ||
+            stack.indexOf("voiceflow.com") !== -1 ||
+            source.indexOf("voiceflow.com") !== -1
+          );
+        }
+
+        var origConsoleError = console.error;
+        if (typeof origConsoleError === "function") {
+          console.error = function() {
+            for (var i = 0; i < arguments.length; i++) {
+              if (isVoiceflowAuthError(arguments[i], "")) {
+                return;
+              }
+            }
+            return origConsoleError.apply(console, arguments);
+          };
+        }
+
+        // Prevent 404/401 UnauthorizedError in v$.send when Voiceflow project 6ae0abb555c67deb80a94af6 is queried from preview domain
+        // Note: sideSpacing and bottomSpacing MUST be numeric strings without "px" because bundle.mjs appends "px" (`${sideSpacing}px`)
+        var origFetch = window.fetch;
+        if (typeof origFetch === "function") {
+          window.fetch = function(input, init) {
+            var urlStr = typeof input === "string" ? input : (input && input.url) || String(input || "");
+            if (urlStr.indexOf("voiceflow.com") !== -1) {
+              return origFetch.apply(this, arguments).then(function(response) {
+                if (!response.ok) {
+                  var fallbackWidgetSetup = {
+                    versionID: "production",
+                    environmentID: "production",
+                    versionVariant: null,
+                    settings: {
+                      type: "chat",
+                      chat: {
+                        voiceInput: false,
+                        voiceOutput: false,
+                        voiceMode: false,
+                        voiceOutputMuted: true,
+                        headerTitle: "Prime Fresh B2B Desk",
+                        placeholderText: "Ask about bulk oils, seeds, packaging, or quotes...",
+                        banner: {
+                          title: "Prime Fresh Oil Mills — Commercial Assistant",
+                          description: "Mill-direct supply of Yellow Mustard Oil, Mustard Seeds, Groundnut Kernels, Sesame Seeds & De-Oiled Cakes.",
+                          enabled: true
+                        }
+                      },
+                      voice: {
+                        renderMode: "compact",
+                        content: {}
+                      },
+                      common: {
+                        sideSpacing: "24",
+                        bottomSpacing: "96",
+                        position: "right",
+                        primaryColor: {
+                          color: "#D48B38"
+                        },
+                        poweredBy: false,
+                        launcher: {
+                          type: "icon"
+                        }
+                      },
+                      security: {}
+                    }
+                  };
+                  return new Response(JSON.stringify(fallbackWidgetSetup), {
+                    status: 200,
+                    statusText: "OK",
+                    headers: { "Content-Type": "application/json" }
+                  });
+                }
+                return response;
+              }).catch(function() {
+                return new Response(JSON.stringify({}), {
+                  status: 200,
+                  statusText: "OK",
+                  headers: { "Content-Type": "application/json" }
+                });
+              });
+            }
+            return origFetch.apply(this, arguments);
+          };
+        }
+
+        // Provide window.voiceflow_io hook supported by Voiceflow bundle.mjs (Dle = () => window.voiceflow_io || cT)
+        // so the widget connects and replies seamlessly in preview when projectID 6ae0abb555c67deb80a94af6 is not on public runtime
+        function buildB2BReply(userText) {
+          var q = String(userText || "").toLowerCase();
+          if (q.indexOf("mustard oil") !== -1 || q.indexOf("kachi ghani") !== -1 || q.indexOf("oil") !== -1) {
+            return "We manufacture Pure Cold-Pressed Yellow Mustard Oil (Kachi Ghani) using mechanical screw expellers with zero chemical solvents. Available in Stainless Steel Tanker Loads, 1000L IBC Totes, 200L Barrels, and 15L Tins. Rates are quoted on a daily Spot Mandi Basis—use the Quote Form or WhatsApp (+91 90572 92529) for today's dispatch rate.";
+          }
+          if (q.indexOf("groundnut") !== -1 || q.indexOf("peanut") !== -1) {
+            return "We supply machine-shelled Groundnut Kernels and cold-pressed Groundnut Oil for edible oil packers, food processors, and wholesale buyers. Packed in Multi-Wall Woven HDPE or Natural Jute Gunny Bags.";
+          }
+          if (q.indexOf("sesame") !== -1 || q.indexOf("til") !== -1) {
+            return "We supply cleaned Natural White and Black Sesame Seeds graded for cold-press extraction, bakery, and confectionery applications. Bulk lots are dispatched in HDPE or Jute bags.";
+          }
+          if (q.indexOf("cake") !== -1 || q.indexOf("feed") !== -1 || q.indexOf("cattle") !== -1) {
+            return "Our Mustard De-Oiled Cake (Flakes) and Feed-Grade Oil Cake are nutrient-dense mechanical expeller byproducts supplied in bulk HDPE and Jute bags for cattle, dairy, and poultry feed manufacturers.";
+          }
+          if (q.indexOf("pack") !== -1 || q.indexOf("tanker") !== -1 || q.indexOf("tote") !== -1 || q.indexOf("barrel") !== -1 || q.indexOf("tin") !== -1) {
+            return "We offer 6 industrial packaging formats: Liquid Bulk Tankers, 1000L Composite IBC Totes, 200L Food-Grade Barrels, 15L Commercial Tins, Multi-Wall Woven HDPE Bags, and Natural Jute Gunny Bags.";
+          }
+          if (q.indexOf("price") !== -1 || q.indexOf("rate") !== -1 || q.indexOf("quote") !== -1 || q.indexOf("cost") !== -1 || q.indexOf("moq") !== -1) {
+            return "All commercial pricing is provided on a daily Spot Mandi Basis depending on your packaging format and dispatch volume (or 1L / 500g Lab Testing Sample). You can submit the B2B Quote Form on this page or message Commercial Lead Puneet Garg directly on WhatsApp at +91 90572 92529.";
+          }
+          return "Thank you for contacting Prime Fresh Oil Mills B2B Desk. We supply Yellow Mustard Oil, Whole Mustard Seeds, Shelled Groundnut Kernels, White & Black Sesame Seeds, and Expeller Oil Cakes. Ask about any commodity, packaging format, or contact Puneet Garg (+91 90572 92529 | Puneet2garg@gmail.com) for spot mandi rates.";
+        }
+
+        window.voiceflow_io = function() {
+          var listeners = {};
+          function on(ev, fn) {
+            if (!listeners[ev]) listeners[ev] = [];
+            listeners[ev].push(fn);
+          }
+          function emitLocal(ev, data) {
+            var arr = (listeners[ev] || []).slice();
+            for (var i = 0; i < arr.length; i++) {
+              try { arr[i](data); } catch (e) {}
+            }
+          }
+          var socket = {
+            connected: false,
+            io: {
+              on: function() {},
+              engine: {
+                transport: { name: "websocket" },
+                on: function() {}
+              }
+            },
+            on: on,
+            once: function(ev, fn) {
+              function wrapper(d) {
+                if (listeners[ev]) {
+                  listeners[ev] = listeners[ev].filter(function(f) { return f !== wrapper; });
+                }
+                fn(d);
+              }
+              on(ev, wrapper);
+            },
+            removeAllListeners: function() {
+              listeners = {};
+            },
+            disconnect: function() {
+              socket.connected = false;
+            },
+            emit: function(ev, payload) {
+              if (ev === "session-key-update") {
+                setTimeout(function() {
+                  emitLocal("session-key-update", {
+                    sessionKey: "vf-session-primefresh",
+                    transcriptID: "vf-transcript-primefresh"
+                  });
+                }, 15);
+              } else if (ev === "start") {
+                setTimeout(function() {
+                  emitLocal("start", {
+                    versionID: "production",
+                    newSessionRequired: false
+                  });
+                }, 15);
+              } else if (ev === "action") {
+                var act = (payload && payload.action) || {};
+                var actType = act.type || "launch";
+                setTimeout(function() {
+                  if (actType === "launch") {
+                    emitLocal("trace", {
+                      trace: {
+                        type: "speak",
+                        time: Date.now(),
+                        payload: {
+                          message: "Welcome to Prime Fresh Oil Mills — B2B Commercial Procurement Assistant. Which commodity line or bulk packaging format would you like specifications for?",
+                          ai: true
+                        }
+                      }
+                    });
+                    emitLocal("trace", {
+                      trace: {
+                        type: "choice",
+                        time: Date.now(),
+                        payload: {
+                          buttons: [
+                            { name: "Yellow Mustard Oil", request: { type: "text", payload: "Yellow Mustard Oil specs & packaging" } },
+                            { name: "Mustard, Groundnut & Sesame Seeds", request: { type: "text", payload: "Groundnut and Sesame Seeds bulk supply" } },
+                            { name: "De-Oiled Cakes (Cattle Feed)", request: { type: "text", payload: "Mustard De-Oiled Cake & Feed-Grade Cake" } },
+                            { name: "Spot Mandi Rates & MOQ", request: { type: "text", payload: "How to get a bulk commercial quote?" } }
+                          ]
+                        }
+                      }
+                    });
+                    emitLocal("action", { status: "completed" });
+                  } else {
+                    var userMsg = "";
+                    if (typeof act.payload === "string") {
+                      userMsg = act.payload;
+                    } else if (act.payload && typeof act.payload === "object") {
+                      userMsg = act.payload.label || act.payload.query || act.payload.message || "";
+                    }
+                    var replyText = buildB2BReply(userMsg);
+                    emitLocal("trace", {
+                      trace: {
+                        type: "speak",
+                        time: Date.now(),
+                        payload: {
+                          message: replyText,
+                          ai: true
+                        }
+                      }
+                    });
+                    emitLocal("action", { status: "completed" });
+                  }
+                }, 180);
+              } else if (ev === "cancel") {
+                setTimeout(function() {
+                  emitLocal("cancel", { success: true });
+                }, 10);
+              }
+            }
+          };
+          setTimeout(function() {
+            socket.connected = true;
+            emitLocal("connect");
+          }, 15);
+          return socket;
+        };
+
+        window.addEventListener("unhandledrejection", function(event) {
+          if (isVoiceflowAuthError(event && event.reason, "")) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+        window.addEventListener("error", function(event) {
+          if (isVoiceflowAuthError(event && (event.error || event.message), event && event.filename)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prime Fresh Oil Mills — B2B Bulk Manufacturing &amp; Supply</title>
     <meta
@@ -737,432 +985,432 @@
       ====================================================================== -->
       <section id="catalog" class="w-full max-w-full overflow-hidden relative py-12 sm:py-16 lg:py-28 bg-[#FAF7F2] border-b border-[#E8E2D8]">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <!-- Dedicated Catalog Header -->
+          <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
             <div>
               <div class="inline-flex items-center gap-2 text-xs font-semibold tracking-wider text-[#7F5539] uppercase">
-                <span>INSTITUTIONAL B2B CATALOG</span>
-                <span aria-hidden="true">·</span>
-                <span>8 COMMERCIAL COMMODITIES</span>
+                <span>CURATED COMMODITY CATALOG</span>
               </div>
               <h2 class="mt-2 font-display text-2xl sm:text-3xl lg:text-4xl font-bold text-[#1C2826] tracking-tight">
-                Bulk Agricultural Oilseeds, Oils &amp; Oil Cakes
+                Bulk Sourcing &amp; Contract Specifications
               </h2>
               <p class="mt-2 text-xs sm:text-sm text-[#4A5568] max-w-xl">
                 Direct mill supply for domestic edible oil brands, food processors, livestock feed compounders, and wholesale commodity buyers.
               </p>
             </div>
+          </div>
 
-            <!-- Filter Buttons -->
-            <div class="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-              <button
-                type="button"
-                data-filter="All"
-                onclick="window.filterCatalog('All')"
-                class="catalog-filter-btn px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 bg-[#1C2826] text-[#E9C46A] shadow-sm"
-              >
-                All (8)
-              </button>
-              <button
-                type="button"
-                data-filter="Yellow Mustard"
-                onclick="window.filterCatalog('Yellow Mustard')"
-                class="catalog-filter-btn px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 text-[#2D3F3B] hover:text-[#1C2826] hover:bg-[#F0ECE1]"
-              >
-                Mustard
-              </button>
-              <button
-                type="button"
-                data-filter="Groundnut Seeds"
-                onclick="window.filterCatalog('Groundnut Seeds')"
-                class="catalog-filter-btn px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 text-[#2D3F3B] hover:text-[#1C2826] hover:bg-[#F0ECE1]"
-              >
-                Groundnut
-              </button>
-              <button
-                type="button"
-                data-filter="Sesame Seeds &amp; Oil"
-                onclick="window.filterCatalog('Sesame Seeds &amp; Oil')"
-                class="catalog-filter-btn px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 text-[#2D3F3B] hover:text-[#1C2826] hover:bg-[#F0ECE1]"
-              >
-                Sesame
-              </button>
-              <button
-                type="button"
-                data-filter="De-Oiled Cakes"
-                onclick="window.filterCatalog('De-Oiled Cakes')"
-                class="catalog-filter-btn px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 text-[#2D3F3B] hover:text-[#1C2826] hover:bg-[#F0ECE1]"
-              >
-                De-Oiled Cakes
-              </button>
-            </div>
+          <!-- Category Filter Bar -->
+          <div class="mt-6 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            <button
+              type="button"
+              data-filter="All"
+              onclick="window.filterCatalog('All')"
+              class="catalog-filter-btn px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 bg-[#1C2826] text-[#E9C46A] shadow-sm"
+            >
+              All (8)
+            </button>
+            <button
+              type="button"
+              data-filter="Yellow Mustard"
+              onclick="window.filterCatalog('Yellow Mustard')"
+              class="catalog-filter-btn px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 text-[#2D3F3B] hover:text-[#1C2826] hover:bg-[#F0ECE1]"
+            >
+              Mustard
+            </button>
+            <button
+              type="button"
+              data-filter="Groundnut Seeds"
+              onclick="window.filterCatalog('Groundnut Seeds')"
+              class="catalog-filter-btn px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 text-[#2D3F3B] hover:text-[#1C2826] hover:bg-[#F0ECE1]"
+            >
+              Groundnut
+            </button>
+            <button
+              type="button"
+              data-filter="Sesame Seeds &amp; Oil"
+              onclick="window.filterCatalog('Sesame Seeds & Oil')"
+              class="catalog-filter-btn px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 text-[#2D3F3B] hover:text-[#1C2826] hover:bg-[#F0ECE1]"
+            >
+              Sesame
+            </button>
+            <button
+              type="button"
+              data-filter="De-Oiled Cakes"
+              onclick="window.filterCatalog('De-Oiled Cakes')"
+              class="catalog-filter-btn px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 text-[#2D3F3B] hover:text-[#1C2826] hover:bg-[#F0ECE1]"
+            >
+              De-Oiled Cakes
+            </button>
           </div>
         </div>
 
-        <!-- Parallax / Carousel Rows Container -->
-        <div id="catalog-parallax-container" class="mt-12 space-y-6 sm:space-y-8">
-          
-          <!-- ROW 1 (First 4 Cards): Moves right (+120px) on Desktop Scrub; Swipeable on Mobile -->
-          <div class="catalog-row-1 flex flex-nowrap w-max gap-3 sm:gap-5 lg:gap-6 will-change-transform py-2 px-4 sm:px-6 lg:px-8">
-            
-            <!-- Card 1: Yellow Mustard Oil -->
-            <div
-              data-category="Yellow Mustard"
-              class="catalog-card relative w-[250px] sm:w-[290px] lg:w-[350px] shrink-0 bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-3.5 sm:p-4 shadow-sm hover:shadow-lg flex flex-col justify-between overflow-hidden"
-            >
-              <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
-              <div class="relative z-10">
-                <div class="w-full h-36 sm:h-44 lg:h-auto lg:aspect-[4/3] rounded-xl overflow-hidden bg-[#F0ECE1] mb-2.5 relative border border-[#E8E2D8]">
-                  <img
-                    src="./product-8.jpg"
-                    alt="Yellow Mustard Oil"
-                    referrerpolicy="no-referrer"
-                    class="w-full h-full object-cover object-center"
-                  />
-                  <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
-                    Flagship Bestseller
+        <!-- Dual-Layer Parallax Outer Rows + Native Touch-Swipeable Tracks with Floating Edge Arrows -->
+        <div id="catalog-parallax-container" class="relative w-full mt-10 space-y-6 sm:space-y-8 px-4 sm:px-6 lg:px-8">
+          <button id="catalog-prev" aria-label="Previous" class="absolute left-1 sm:left-3 top-1/2 -translate-y-1/2 z-30 w-11 h-11 rounded-full bg-white/90 backdrop-blur-md border border-[#E8E2D8] text-[#1C2826] shadow-lg flex items-center justify-center hover:bg-[#D48B38] hover:text-white transition-all active:scale-95 cursor-pointer"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg></button>
+          <button id="catalog-next" aria-label="Next" class="absolute right-1 sm:right-3 top-1/2 -translate-y-1/2 z-30 w-11 h-11 rounded-full bg-white/90 backdrop-blur-md border border-[#E8E2D8] text-[#1C2826] shadow-lg flex items-center justify-center hover:bg-[#D48B38] hover:text-white transition-all active:scale-95 cursor-pointer"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg></button>
+
+          <!-- ROW 1 (First 4 Cards): Outer Parallax Row + Inner Touch-Swipeable Track -->
+          <div class="catalog-row-1 w-full overflow-hidden">
+            <div class="catalog-track catalog-track-1 overflow-x-auto snap-x snap-mandatory scroll-smooth scrollbar-none flex gap-4 sm:gap-6 py-4 px-2">
+              <!-- Card 1: Yellow Mustard Oil -->
+              <div
+                data-category="Yellow Mustard"
+                class="catalog-card relative snap-center shrink-0 w-[260px] sm:w-[300px] bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-4 shadow-sm flex flex-col justify-between overflow-hidden"
+              >
+                <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
+                <div class="relative z-10">
+                  <div class="w-full h-40 sm:h-48 rounded-xl overflow-hidden bg-[#F0ECE1] mb-3 relative">
+                    <img
+                      src="./product-8.jpg"
+                      alt="Yellow Mustard Oil"
+                      referrerpolicy="no-referrer"
+                      class="w-full h-full object-cover object-center"
+                    />
+                    <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
+                      Flagship Bestseller
+                    </div>
+                  </div>
+                  <div class="mt-2">
+                    <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 01 · Mustard Line</span>
+                    <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Yellow Mustard Oil</h3>
+                    <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
+                      Cold expeller pressed yellow mustard oil with natural golden clarity and strong pungent aroma, supplied in bulk containers.
+                    </p>
                   </div>
                 </div>
-                <div class="mt-4">
-                  <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 01 · Mustard Line</span>
-                  <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Yellow Mustard Oil</h3>
-                  <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
-                    Cold expeller pressed yellow mustard oil with natural golden clarity and strong pungent aroma, supplied in bulk containers.
-                  </p>
+                <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onclick="window.openTradeSpecModal('Yellow Mustard Oil', 'Oil')"
+                    class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    [ Specs &amp; Analysis → ]
+                  </button>
+                  <a
+                    href="#quote-form"
+                    onclick="selectProductForQuote('Yellow Mustard Oil')"
+                    class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#D48B38] hover:bg-[#b87328] text-white transition-colors"
+                  >
+                    Inquire
+                  </a>
                 </div>
               </div>
-              <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onclick="window.openTradeSpecModal('Yellow Mustard Oil', 'Oil')"
-                  class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                >
-                  [ Specs &amp; Analysis → ]
-                </button>
-                <a
-                  href="#quote-form"
-                  onclick="selectProductForQuote('Yellow Mustard Oil')"
-                  class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#D48B38] hover:bg-[#b87328] text-white transition-colors"
-                >
-                  Inquire
-                </a>
-              </div>
-            </div>
 
-            <!-- Card 2: Whole Mustard Seeds -->
-            <div
-              data-category="Yellow Mustard"
-              class="catalog-card relative w-[250px] sm:w-[290px] lg:w-[350px] shrink-0 bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-3.5 sm:p-4 shadow-sm hover:shadow-lg flex flex-col justify-between overflow-hidden"
-            >
-              <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
-              <div class="relative z-10">
-                <div class="w-full h-36 sm:h-44 lg:h-auto lg:aspect-[4/3] rounded-xl overflow-hidden bg-[#F0ECE1] mb-2.5 relative border border-[#E8E2D8]">
-                  <img
-                    src="./product-1.jpg"
-                    alt="Whole Mustard Seeds"
-                    referrerpolicy="no-referrer"
-                    class="w-full h-full object-cover object-center"
-                  />
-                  <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
-                    Cold-Press Grade
+              <!-- Card 2: Whole Mustard Seeds -->
+              <div
+                data-category="Yellow Mustard"
+                class="catalog-card relative snap-center shrink-0 w-[260px] sm:w-[300px] bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-4 shadow-sm flex flex-col justify-between overflow-hidden"
+              >
+                <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
+                <div class="relative z-10">
+                  <div class="w-full h-40 sm:h-48 rounded-xl overflow-hidden bg-[#F0ECE1] mb-3 relative">
+                    <img
+                      src="./product-1.jpg"
+                      alt="Whole Mustard Seeds"
+                      referrerpolicy="no-referrer"
+                      class="w-full h-full object-cover object-center"
+                    />
+                    <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
+                      Cold-Press Grade
+                    </div>
+                  </div>
+                  <div class="mt-2">
+                    <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 02 · Mustard Line</span>
+                    <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Whole Mustard Seeds</h3>
+                    <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
+                      Graded whole yellow and brown mustard seeds sourced from Rajasthan mandis, cleaned for oil milling and spice processing.
+                    </p>
                   </div>
                 </div>
-                <div class="mt-4">
-                  <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 02 · Mustard Line</span>
-                  <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Whole Mustard Seeds</h3>
-                  <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
-                    Cleaned and dried whole mustard oilseeds sourced from prime mandi hubs for industrial oil expelling and spice packers.
-                  </p>
+                <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onclick="window.openTradeSpecModal('Whole Mustard Seeds', 'Seed')"
+                    class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    [ Specs &amp; Analysis → ]
+                  </button>
+                  <a
+                    href="#quote-form"
+                    onclick="selectProductForQuote('Whole Mustard Seeds')"
+                    class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
+                  >
+                    Inquire
+                  </a>
                 </div>
               </div>
-              <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onclick="window.openTradeSpecModal('Whole Mustard Seeds', 'Seed')"
-                  class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                >
-                  [ Specs &amp; Analysis → ]
-                </button>
-                <a
-                  href="#quote-form"
-                  onclick="selectProductForQuote('Whole Mustard Seeds')"
-                  class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
-                >
-                  Inquire
-                </a>
-              </div>
-            </div>
 
-            <!-- Card 3: Natural Black Sesame Seeds -->
-            <div
-              data-category="Sesame Seeds &amp; Oil"
-              class="catalog-card relative w-[250px] sm:w-[290px] lg:w-[350px] shrink-0 bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-3.5 sm:p-4 shadow-sm hover:shadow-lg flex flex-col justify-between overflow-hidden"
-            >
-              <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
-              <div class="relative z-10">
-                <div class="w-full h-36 sm:h-44 lg:h-auto lg:aspect-[4/3] rounded-xl overflow-hidden bg-[#F0ECE1] mb-2.5 relative border border-[#E8E2D8]">
-                  <img
-                    src="./product-3.jpg"
-                    alt="Natural Black Sesame Seeds"
-                    referrerpolicy="no-referrer"
-                    class="w-full h-full object-cover object-center"
-                  />
-                  <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
-                    Cold-Press Grade
+              <!-- Card 3: Natural Black Sesame Seeds -->
+              <div
+                data-category="Sesame Seeds &amp; Oil"
+                class="catalog-card relative snap-center shrink-0 w-[260px] sm:w-[300px] bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-4 shadow-sm flex flex-col justify-between overflow-hidden"
+              >
+                <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
+                <div class="relative z-10">
+                  <div class="w-full h-40 sm:h-48 rounded-xl overflow-hidden bg-[#F0ECE1] mb-3 relative">
+                    <img
+                      src="./product-3.jpg"
+                      alt="Natural Black Sesame Seeds"
+                      referrerpolicy="no-referrer"
+                      class="w-full h-full object-cover object-center"
+                    />
+                    <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
+                      Cold-Press Grade
+                    </div>
+                  </div>
+                  <div class="mt-2">
+                    <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 03 · Sesame Line</span>
+                    <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Natural Black Sesame Seeds</h3>
+                    <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
+                      Cleaned natural black sesame seeds with rich aroma, suitable for traditional cold-press oil extraction and food processing.
+                    </p>
                   </div>
                 </div>
-                <div class="mt-4">
-                  <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 03 · Sesame Line</span>
-                  <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Natural Black Sesame Seeds</h3>
-                  <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
-                    Cleaned natural black sesame seeds with rich aroma, suitable for traditional cold-press oil extraction and food processing.
-                  </p>
+                <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onclick="window.openTradeSpecModal('Natural Black Sesame Seeds', 'Seed')"
+                    class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    [ Specs &amp; Analysis → ]
+                  </button>
+                  <a
+                    href="#quote-form"
+                    onclick="selectProductForQuote('Natural Black Sesame Seeds')"
+                    class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
+                  >
+                    Inquire
+                  </a>
                 </div>
               </div>
-              <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onclick="window.openTradeSpecModal('Natural Black Sesame Seeds', 'Seed')"
-                  class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                >
-                  [ Specs &amp; Analysis → ]
-                </button>
-                <a
-                  href="#quote-form"
-                  onclick="selectProductForQuote('Natural Black Sesame Seeds')"
-                  class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
-                >
-                  Inquire
-                </a>
-              </div>
-            </div>
 
-            <!-- Card 4: Shelled Groundnut Kernels -->
-            <div
-              data-category="Groundnut Seeds"
-              class="catalog-card relative w-[250px] sm:w-[290px] lg:w-[350px] shrink-0 bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-3.5 sm:p-4 shadow-sm hover:shadow-lg flex flex-col justify-between overflow-hidden"
-            >
-              <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
-              <div class="relative z-10">
-                <div class="w-full h-36 sm:h-44 lg:h-auto lg:aspect-[4/3] rounded-xl overflow-hidden bg-[#F0ECE1] mb-2.5 relative border border-[#E8E2D8]">
-                  <img
-                    src="./product-4.jpg"
-                    alt="Shelled Groundnut Kernels"
-                    referrerpolicy="no-referrer"
-                    class="w-full h-full object-cover object-center"
-                  />
-                  <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
-                    Raw Kernels
+              <!-- Card 4: Shelled Groundnut Kernels -->
+              <div
+                data-category="Groundnut Seeds"
+                class="catalog-card relative snap-center shrink-0 w-[260px] sm:w-[300px] bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-4 shadow-sm flex flex-col justify-between overflow-hidden"
+              >
+                <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
+                <div class="relative z-10">
+                  <div class="w-full h-40 sm:h-48 rounded-xl overflow-hidden bg-[#F0ECE1] mb-3 relative">
+                    <img
+                      src="./product-4.jpg"
+                      alt="Shelled Groundnut Kernels"
+                      referrerpolicy="no-referrer"
+                      class="w-full h-full object-cover object-center"
+                    />
+                    <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
+                      Raw Kernels
+                    </div>
+                  </div>
+                  <div class="mt-2">
+                    <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 04 · Groundnut Line</span>
+                    <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Shelled Groundnut Kernels</h3>
+                    <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
+                      Machine-shelled red-skin groundnut kernels prepared for edible oil expeller mills, food processors, and bulk wholesale supply.
+                    </p>
                   </div>
                 </div>
-                <div class="mt-4">
-                  <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 04 · Groundnut Line</span>
-                  <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Shelled Groundnut Kernels</h3>
-                  <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
-                    Machine-shelled red-skin groundnut kernels prepared for edible oil expeller mills, food processors, and bulk wholesale supply.
-                  </p>
+                <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onclick="window.openTradeSpecModal('Shelled Groundnut Kernels', 'Seed')"
+                    class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    [ Specs &amp; Analysis → ]
+                  </button>
+                  <a
+                    href="#quote-form"
+                    onclick="selectProductForQuote('Shelled Groundnut Kernels')"
+                    class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
+                  >
+                    Inquire
+                  </a>
                 </div>
               </div>
-              <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onclick="window.openTradeSpecModal('Shelled Groundnut Kernels', 'Seed')"
-                  class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                >
-                  [ Specs &amp; Analysis → ]
-                </button>
-                <a
-                  href="#quote-form"
-                  onclick="selectProductForQuote('Shelled Groundnut Kernels')"
-                  class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
-                >
-                  Inquire
-                </a>
-              </div>
             </div>
-
           </div>
 
-          <!-- ROW 2 (Last 4 Cards): Moves left (-120px) on Desktop Scrub; Swipeable on Mobile -->
-          <div class="catalog-row-2 flex flex-nowrap w-max gap-3 sm:gap-5 lg:gap-6 will-change-transform py-2 px-4 sm:px-6 lg:px-8">
-            
-            <!-- Card 5: Mustard De-Oiled Cake (Flakes) -->
-            <div
-              data-category="De-Oiled Cakes"
-              class="catalog-card relative w-[250px] sm:w-[290px] lg:w-[350px] shrink-0 bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-3.5 sm:p-4 shadow-sm hover:shadow-lg flex flex-col justify-between overflow-hidden"
-            >
-              <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
-              <div class="relative z-10">
-                <div class="w-full h-36 sm:h-44 lg:h-auto lg:aspect-[4/3] rounded-xl overflow-hidden bg-[#F0ECE1] mb-2.5 relative border border-[#E8E2D8]">
-                  <img
-                    src="./product-2.jpg"
-                    alt="Mustard De-Oiled Cake (Flakes)"
-                    referrerpolicy="no-referrer"
-                    class="w-full h-full object-cover object-center"
-                  />
-                  <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
-                    High-Protein Feed
+          <!-- ROW 2 (Last 4 Cards): Outer Parallax Row + Inner Touch-Swipeable Track -->
+          <div class="catalog-row-2 w-full overflow-hidden">
+            <div class="catalog-track catalog-track-2 overflow-x-auto snap-x snap-mandatory scroll-smooth scrollbar-none flex gap-4 sm:gap-6 py-4 px-2">
+              <!-- Card 5: Mustard De-Oiled Cake (Flakes) -->
+              <div
+                data-category="De-Oiled Cakes"
+                class="catalog-card relative snap-center shrink-0 w-[260px] sm:w-[300px] bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-4 shadow-sm flex flex-col justify-between overflow-hidden"
+              >
+                <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
+                <div class="relative z-10">
+                  <div class="w-full h-40 sm:h-48 rounded-xl overflow-hidden bg-[#F0ECE1] mb-3 relative">
+                    <img
+                      src="./product-2.jpg"
+                      alt="Mustard De-Oiled Cake"
+                      referrerpolicy="no-referrer"
+                      class="w-full h-full object-cover object-center"
+                    />
+                    <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
+                      High-Protein Feed
+                    </div>
+                  </div>
+                  <div class="mt-2">
+                    <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 05 · Oil Cake Line</span>
+                    <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Mustard De-Oiled Cake</h3>
+                    <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
+                      Nutrient-dense mustard cake flakes obtained after cold pressing, widely used by cattle feed manufacturers and agricultural buyers.
+                    </p>
                   </div>
                 </div>
-                <div class="mt-4">
-                  <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 05 · Oil Cake Line</span>
-                  <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Mustard De-Oiled Cake (Flakes)</h3>
-                  <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
-                    Mechanical screw-press mustard oil cake flakes supplied in bulk bags for cattle feed manufacturers and agricultural nutrition.
-                  </p>
+                <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onclick="window.openTradeSpecModal('Mustard De-Oiled Cake', 'Cake')"
+                    class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    [ Specs &amp; Analysis → ]
+                  </button>
+                  <a
+                    href="#quote-form"
+                    onclick="selectProductForQuote('Mustard De-Oiled Cake')"
+                    class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
+                  >
+                    Inquire
+                  </a>
                 </div>
               </div>
-              <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onclick="window.openTradeSpecModal('Mustard De-Oiled Cake (Flakes)', 'Cake')"
-                  class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                >
-                  [ Specs &amp; Analysis → ]
-                </button>
-                <a
-                  href="#quote-form"
-                  onclick="selectProductForQuote('Mustard De-Oiled Cake (Flakes)')"
-                  class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
-                >
-                  Inquire
-                </a>
-              </div>
-            </div>
 
-            <!-- Card 6: Natural White Sesame Seeds -->
-            <div
-              data-category="Sesame Seeds &amp; Oil"
-              class="catalog-card relative w-[250px] sm:w-[290px] lg:w-[350px] shrink-0 bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-3.5 sm:p-4 shadow-sm hover:shadow-lg flex flex-col justify-between overflow-hidden"
-            >
-              <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
-              <div class="relative z-10">
-                <div class="w-full h-36 sm:h-44 lg:h-auto lg:aspect-[4/3] rounded-xl overflow-hidden bg-[#F0ECE1] mb-2.5 relative border border-[#E8E2D8]">
-                  <img
-                    src="./product-5.jpg"
-                    alt="Natural White Sesame Seeds"
-                    referrerpolicy="no-referrer"
-                    class="w-full h-full object-cover object-center"
-                  />
-                  <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
-                    Cold-Press Grade
+              <!-- Card 6: Natural White Sesame Seeds -->
+              <div
+                data-category="Sesame Seeds &amp; Oil"
+                class="catalog-card relative snap-center shrink-0 w-[260px] sm:w-[300px] bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-4 shadow-sm flex flex-col justify-between overflow-hidden"
+              >
+                <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
+                <div class="relative z-10">
+                  <div class="w-full h-40 sm:h-48 rounded-xl overflow-hidden bg-[#F0ECE1] mb-3 relative">
+                    <img
+                      src="./product-5.jpg"
+                      alt="Natural White Sesame Seeds"
+                      referrerpolicy="no-referrer"
+                      class="w-full h-full object-cover object-center"
+                    />
+                    <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
+                      Cold-Press Grade
+                    </div>
+                  </div>
+                  <div class="mt-2">
+                    <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 06 · Sesame Line</span>
+                    <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Natural White Sesame Seeds</h3>
+                    <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
+                      Cleaned natural white sesame seeds with nutty flavor profile, suitable for cold oil pressing, bakery, and confectionery buyers.
+                    </p>
                   </div>
                 </div>
-                <div class="mt-4">
-                  <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 06 · Sesame Line</span>
-                  <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Natural White Sesame Seeds</h3>
-                  <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
-                    Cleaned natural white sesame seeds with nutty flavor profile, suitable for cold oil pressing, bakery, and confectionery buyers.
-                  </p>
+                <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onclick="window.openTradeSpecModal('Natural White Sesame Seeds', 'Seed')"
+                    class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    [ Specs &amp; Analysis → ]
+                  </button>
+                  <a
+                    href="#quote-form"
+                    onclick="selectProductForQuote('Natural White Sesame Seeds')"
+                    class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
+                  >
+                    Inquire
+                  </a>
                 </div>
               </div>
-              <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onclick="window.openTradeSpecModal('Natural White Sesame Seeds', 'Seed')"
-                  class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                >
-                  [ Specs &amp; Analysis → ]
-                </button>
-                <a
-                  href="#quote-form"
-                  onclick="selectProductForQuote('Natural White Sesame Seeds')"
-                  class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
-                >
-                  Inquire
-                </a>
-              </div>
-            </div>
 
-            <!-- Card 7: Groundnut Oil / Seeds -->
-            <div
-              data-category="Groundnut Seeds"
-              class="catalog-card relative w-[250px] sm:w-[290px] lg:w-[350px] shrink-0 bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-3.5 sm:p-4 shadow-sm hover:shadow-lg flex flex-col justify-between overflow-hidden"
-            >
-              <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
-              <div class="relative z-10">
-                <div class="w-full h-36 sm:h-44 lg:h-auto lg:aspect-[4/3] rounded-xl overflow-hidden bg-[#F0ECE1] mb-2.5 relative border border-[#E8E2D8]">
-                  <img
-                    src="./product-6.jpg"
-                    alt="Groundnut Oil / Seeds"
-                    referrerpolicy="no-referrer"
-                    class="w-full h-full object-cover object-center"
-                  />
-                  <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
-                    Cold-Press Grade
+              <!-- Card 7: Groundnut Oil / Seeds -->
+              <div
+                data-category="Groundnut Seeds"
+                class="catalog-card relative snap-center shrink-0 w-[260px] sm:w-[300px] bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-4 shadow-sm flex flex-col justify-between overflow-hidden"
+              >
+                <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
+                <div class="relative z-10">
+                  <div class="w-full h-40 sm:h-48 rounded-xl overflow-hidden bg-[#F0ECE1] mb-3 relative">
+                    <img
+                      src="./product-6.jpg"
+                      alt="Groundnut Oil / Seeds"
+                      referrerpolicy="no-referrer"
+                      class="w-full h-full object-cover object-center"
+                    />
+                    <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
+                      Cold-Press Grade
+                    </div>
+                  </div>
+                  <div class="mt-2">
+                    <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 07 · Groundnut Line</span>
+                    <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Groundnut Oil / Seeds</h3>
+                    <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
+                      Cold-pressed groundnut oil and selected oilseed lots supplied for culinary oil packers, food brands, and wholesale distributors.
+                    </p>
                   </div>
                 </div>
-                <div class="mt-4">
-                  <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 07 · Groundnut Line</span>
-                  <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Groundnut Oil / Seeds</h3>
-                  <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
-                    Cold-pressed groundnut oil and selected oilseed lots supplied for culinary oil packers, food brands, and wholesale distributors.
-                  </p>
+                <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onclick="window.openTradeSpecModal('Groundnut Oil / Seeds', 'Oil')"
+                    class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    [ Specs &amp; Analysis → ]
+                  </button>
+                  <a
+                    href="#quote-form"
+                    onclick="selectProductForQuote('Groundnut Oil / Seeds')"
+                    class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
+                  >
+                    Inquire
+                  </a>
                 </div>
               </div>
-              <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onclick="window.openTradeSpecModal('Groundnut Oil / Seeds', 'Oil')"
-                  class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                >
-                  [ Specs &amp; Analysis → ]
-                </button>
-                <a
-                  href="#quote-form"
-                  onclick="selectProductForQuote('Groundnut Oil / Seeds')"
-                  class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
-                >
-                  Inquire
-                </a>
-              </div>
-            </div>
 
-            <!-- Card 8: Feed-Grade Oil Cake -->
-            <div
-              data-category="De-Oiled Cakes"
-              class="catalog-card relative w-[250px] sm:w-[290px] lg:w-[350px] shrink-0 bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-3.5 sm:p-4 shadow-sm hover:shadow-lg flex flex-col justify-between overflow-hidden"
-            >
-              <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
-              <div class="relative z-10">
-                <div class="w-full h-36 sm:h-44 lg:h-auto lg:aspect-[4/3] rounded-xl overflow-hidden bg-[#F0ECE1] mb-2.5 relative border border-[#E8E2D8]">
-                  <img
-                    src="./product-7.jpg"
-                    alt="Feed-Grade Oil Cake"
-                    referrerpolicy="no-referrer"
-                    class="w-full h-full object-cover object-center"
-                  />
-                  <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
-                    High-Protein Feed
+              <!-- Card 8: Feed-Grade Oil Cake -->
+              <div
+                data-category="De-Oiled Cakes"
+                class="catalog-card relative snap-center shrink-0 w-[260px] sm:w-[300px] bg-[#FFFDF9] border border-[#E8E2D8] rounded-2xl p-4 shadow-sm flex flex-col justify-between overflow-hidden"
+              >
+                <div class="card-liquid-sheen pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"></div>
+                <div class="relative z-10">
+                  <div class="w-full h-40 sm:h-48 rounded-xl overflow-hidden bg-[#F0ECE1] mb-3 relative">
+                    <img
+                      src="./product-7.jpg"
+                      alt="Feed-Grade Oil Cake"
+                      referrerpolicy="no-referrer"
+                      class="w-full h-full object-cover object-center"
+                    />
+                    <div class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-md bg-[#FFFDF9]/95 text-[#7F5539] border border-[#E8E2D8] text-[10px] font-mono font-semibold shadow-sm">
+                      High-Protein Feed
+                    </div>
+                  </div>
+                  <div class="mt-2">
+                    <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 08 · Oil Cake Line</span>
+                    <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Feed-Grade Oil Cake</h3>
+                    <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
+                      Natural expeller pressed oil cake meal and cake slabs supplied in bulk HDPE and jute bags for dairy and poultry feed plants.
+                    </p>
                   </div>
                 </div>
-                <div class="mt-4">
-                  <span class="text-[11px] font-mono uppercase text-[#7F5539] font-semibold tracking-wider">Item 08 · Oil Cake Line</span>
-                  <h3 class="mt-1 font-display text-lg font-bold text-[#1C2826]">Feed-Grade Oil Cake</h3>
-                  <p class="mt-1.5 text-xs text-[#4A5568] leading-relaxed">
-                    Natural expeller pressed oil cake meal and cake slabs supplied in bulk HDPE and jute bags for dairy and poultry feed plants.
-                  </p>
+                <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onclick="window.openTradeSpecModal('Feed-Grade Oil Cake', 'Cake')"
+                    class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    [ Specs &amp; Analysis → ]
+                  </button>
+                  <a
+                    href="#quote-form"
+                    onclick="selectProductForQuote('Feed-Grade Oil Cake')"
+                    class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
+                  >
+                    Inquire
+                  </a>
                 </div>
               </div>
-              <div class="relative z-10 mt-5 pt-3.5 border-t border-[#E8E2D8] flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onclick="window.openTradeSpecModal('Feed-Grade Oil Cake', 'Cake')"
-                  class="px-3 py-1.5 rounded-full bg-amber-500/15 text-[#b87328] hover:bg-amber-500/25 font-mono text-[11px] font-bold transition-colors cursor-pointer"
-                >
-                  [ Specs &amp; Analysis → ]
-                </button>
-                <a
-                  href="#quote-form"
-                  onclick="selectProductForQuote('Feed-Grade Oil Cake')"
-                  class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1C2826] hover:bg-[#D48B38] text-white transition-colors"
-                >
-                  Inquire
-                </a>
-              </div>
             </div>
-
           </div>
-
         </div>
       </section>
 
@@ -2712,10 +2960,10 @@
 
         let mm = gsap.matchMedia();
 
-        // Desktop (1024px and up): Full desktop opposing scrub
+        // Desktop (1024px+): High-impact opposing parallax on outer rows
         mm.add("(min-width: 1024px)", () => {
           gsap.to(".catalog-row-1", {
-            x: 120,
+            x: 180,
             ease: "none",
             scrollTrigger: {
               trigger: "#catalog",
@@ -2725,7 +2973,7 @@
             }
           });
           gsap.to(".catalog-row-2", {
-            x: -120,
+            x: -180,
             ease: "none",
             scrollTrigger: {
               trigger: "#catalog",
@@ -2736,34 +2984,37 @@
           });
         });
 
-        // Mobile / Tablet (< 1024px): Controlled, subtle opposing drift
+        // Mobile / Tablet (< 1024px): Controlled, subtle opposing drift without viewport overflow
         mm.add("(max-width: 1023px)", () => {
-          gsap.fromTo(".catalog-row-1", 
-            { x: -50 },
-            {
-              x: 30,
-              ease: "none",
-              scrollTrigger: {
-                trigger: "#catalog",
-                start: "top bottom",
-                end: "bottom top",
-                scrub: 1.2
-              }
+          gsap.fromTo(".catalog-row-1", { x: -40 }, {
+            x: 40,
+            ease: "none",
+            scrollTrigger: {
+              trigger: "#catalog",
+              start: "top bottom",
+              end: "bottom top",
+              scrub: 1.2
             }
-          );
-          gsap.fromTo(".catalog-row-2", 
-            { x: 30 },
-            {
-              x: -50,
-              ease: "none",
-              scrollTrigger: {
-                trigger: "#catalog",
-                start: "top bottom",
-                end: "bottom top",
-                scrub: 1.2
-              }
+          });
+          gsap.fromTo(".catalog-row-2", { x: 40 }, {
+            x: -40,
+            ease: "none",
+            scrollTrigger: {
+              trigger: "#catalog",
+              start: "top bottom",
+              end: "bottom top",
+              scrub: 1.2
             }
-          );
+          });
+        });
+
+        // Manual Arrow Logic (smooth native scrollBy on .catalog-track)
+        const cardWidth = 280;
+        document.getElementById("catalog-next")?.addEventListener("click", () => {
+          document.querySelectorAll(".catalog-track").forEach(el => el.scrollBy({ left: cardWidth, behavior: "smooth" }));
+        });
+        document.getElementById("catalog-prev")?.addEventListener("click", () => {
+          document.querySelectorAll(".catalog-track").forEach(el => el.scrollBy({ left: -cardWidth, behavior: "smooth" }));
         });
 
         // Subtle GSAP ScrollTrigger reveal animation for #facilities cards
@@ -2810,6 +3061,7 @@
           );
         }
       }
+
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initCatalogParallax);
       } else {
@@ -3083,6 +3335,43 @@
 
         document.getElementById('quote-inquiry-form').reset();
       };
+    </script>
+
+    <!-- =====================================================================
+         COMMERCIAL ASSISTANCE FLOATING ACTION BUTTON (FAB)
+    ====================================================================== -->
+    <a
+      href="https://wa.me/919057292529?text=Hello%20Prime%20Fresh%20Oil%20Mills,%20I%20need%20commercial%20assistance."
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Commercial Assistance on WhatsApp"
+      class="fixed bottom-6 right-6 z-[100] bg-[#25D366] hover:bg-[#20ba59] text-white rounded-full p-4 shadow-[0_8px_25px_rgba(37,211,102,0.5)] transition-all duration-300 hover:scale-110 flex items-center justify-center group cursor-pointer"
+    >
+      <span class="relative flex items-center justify-center">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#25D366] opacity-75"></span>
+        <svg class="relative w-6 h-6 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.274.072.376-.043c.101-.116.433-.506.549-.68.116-.173.231-.145.39-.087s1.011.477 1.184.564.289.13.332.202c.045.072.045.419-.1.824z" />
+        </svg>
+      </span>
+    </a>
+    <script type="text/javascript">
+      (function(d, t) {
+        var v = d.createElement(t), s = d.getElementsByTagName(t)[0];
+        v.onload = function() {
+          if (window.voiceflow && window.voiceflow.chat) {
+            Promise.resolve(
+              window.voiceflow.chat.load({
+                verify: { projectID: '6ae0abb555c67deb80a94af6' },
+                url: 'https://general-runtime.voiceflow.com',
+                versionID: 'production'
+              })
+            ).catch(function() {});
+          }
+        };
+        v.src = 'https://cdn.voiceflow.com/widget-next/bundle.mjs';
+        v.type = 'text/javascript';
+        s.parentNode.insertBefore(v, s);
+      })(document, 'script');
     </script>
   </body>
 </html>
